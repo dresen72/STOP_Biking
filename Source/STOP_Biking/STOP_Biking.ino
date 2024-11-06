@@ -20,9 +20,14 @@
 Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST); // declare screen object
 
 int rev_counter = 0; // Count wheel revs for distance
+unsigned long cur_time;
 unsigned long prev_time = 0; // Track previous time of rev for speed
+int gap;
+int prev_gap = 0; // track previous gap for averaging
+double avg_gap;
 double rps;
 double mps;
+double dist;
 
 
 void setup() {
@@ -38,25 +43,29 @@ void setup() {
 
   tft.init(240, 320); // Init LCD screen
   tft.fillScreen(ST77XX_BLACK);
-  display_speedometer();
+  // display_speedometer();
 }
 
 void loop() {
-  display_speedometer();
   delay(10);
 }
 
 void hall_interrupt(){
-  unsigned long cur_time = millis();
-  unsigned long gap = cur_time - prev_time;
-  rps = 1000.0/gap;
+  cur_time = millis();
+  gap = cur_time - prev_time;
+  avg_gap = (gap+prev_gap)/2.0;
+  rps = 125.0/avg_gap;
   mps = rps * CIRC;
   Serial.print("RPS: ");
   Serial.println(rps);
   Serial.print("M/S: ");
   Serial.println(mps);
   prev_time = cur_time;
+  prev_gap = gap;
   rev_counter++;
+  dist = rev_counter*CIRC_8TH;
+  Serial.print("Dist: ");
+  Serial.println(dist);
 }
 
 

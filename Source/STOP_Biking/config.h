@@ -10,6 +10,7 @@
 
 // COMPUTATION VARIABLES
 #define CIRC           2.03481 // Circumfrence of the bike wheel
+#define CIRC_8TH       0.25435 // 1/8 of the circumfrece
 #define MPH_CONV       2.237   // M/s to MPH conversion
 
 
