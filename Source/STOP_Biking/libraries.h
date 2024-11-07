@@ -10,7 +10,14 @@
 
 // GENERIC LIBRARIES:
 #include <SPI.h>
+#include <Wire.h>
 
 // LCD DISPLAY:
 #include <Adafruit_GFX.h>    // Core graphics library
 #include <Adafruit_ST7789.h> // Hardware-specific library for ST7789
+
+// LIDAR:
+#include <LIDARLite_v3HP.h>
+
+// SERVO:
+#include <Servo.h> 

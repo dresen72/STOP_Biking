@@ -17,91 +17,177 @@
 #include "config.h"
 #include "libraries.h"
 
-Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST); // declare screen object
+// declare screen object
+Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST); 
 
-int rev_counter = 0; // Count wheel revs for distance
-unsigned long cur_time;
-unsigned long prev_time = 0; // Track previous time of rev for speed
-int gap;
-int prev_gap = 0; // track previous gap for averaging
-double avg_gap;
-double rps;
-double mps;
-double dist;
+// declare LIDAR object
+LIDARLite_v3HP myLidarLite; 
 
+// Global Vars:
+int rev_counter = 0; // count wheel revs for distance
+double dist_m;       // total distance (m)
+
+unsigned long elapsed_ms = 0; // total time active (ms)
+unsigned long cur_time;       // current interrupt time (ms)
+unsigned long prev_time = 0;  // previous interrupt time (ms)
+
+int gap;          // gap between intervals (ms)
+int prev_gap = 0; // track previous gap for averaging (ms)
+double avg_gap;   // average gap (ms)
+
+double speed_rps;       // speed in revolutions per second
+double speed_mps;       // speed in meters per second
+double speed_mph;       // speed in miles per hour
+
+float nearest_obj_dist_m; // what the LIDAR sees
 
 void setup() {
-  // Serial monitor init
+  // serial init
   Serial.begin(9600);
   Serial.println("Begin S.T.O.P");
   
   // pin mode inits
   pinMode(HALL, INPUT);
 
-  // Add interrupts on falling edge of pull-up hall effect
+  // add interrupts on falling edge of pull-up hall effect
   attachInterrupt(digitalPinToInterrupt(HALL), hall_interrupt, FALLING);
 
-  tft.init(240, 320); // Init LCD screen
-  tft.fillScreen(ST77XX_BLACK);
-  // display_speedometer();
+  // initialize I2C
+  Wire.begin();
+  TWBR = ((F_CPU / 400000UL) - 16) / 2; // Set I2C frequency to 400kHz
+
+  // configure LIDAR to long distance
+  myLidarLite.configure(3);
+
+  // init LCD screen
+  tft.init(240, 320); 
+  tft.setSPISpeed(40000000);
+
+  // set screen to basic layout
+  reset_screen();
 }
 
+// control loop
 void loop() {
+  // read LIDAR
+  nearest_obj_dist_m = distance_single();
+
+  // update time
+  elapsed_ms = millis();
+
+  // display new data
+  display_dashboard();
   delay(10);
 }
 
+// interrupt for each 1/8th revolution
 void hall_interrupt(){
+  // update interrupt time and gaps
   cur_time = millis();
   gap = cur_time - prev_time;
+
+  // calculate average game for smoothing
   avg_gap = (gap+prev_gap)/2.0;
-  rps = 125.0/avg_gap;
-  mps = rps * CIRC;
-  Serial.print("RPS: ");
-  Serial.println(rps);
-  Serial.print("M/S: ");
-  Serial.println(mps);
+
+  // convert all speed values
+  speed_rps = 125.0/avg_gap;
+  speed_mps = speed_rps * CIRC;
+  speed_mph = speed_mps * MPH_CONV;
+
+  // set the prev trackers
   prev_time = cur_time;
   prev_gap = gap;
+
+  // increment distance trackers
   rev_counter++;
-  dist = rev_counter*CIRC_8TH;
-  Serial.print("Dist: ");
-  Serial.println(dist);
+  dist_m = rev_counter*CIRC_8TH;
 }
 
+void display_dashboard() {
+    // pre-calculate values
+    int hours = (elapsed_ms / (1000 * 60 * 60)) % 24;
+    int minutes = (elapsed_ms / (1000 * 60)) % 60;
+    int seconds = (elapsed_ms / 1000) % 60;
+    float km = dist_m / 1000.0;
 
-void display_speedometer() {
-  double speed_mph = mps * MPH_CONV;
-  tft.fillScreen(ST77XX_BLACK); // Clear screen each update
+    // display Speed (xx.x MPH)
+    tft.setCursor(10, 80);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setTextSize(5);
+    if(speed_mph<10){
+      tft.print("0");
+    }
+    tft.print(speed_mph, 1);
 
-  // Draw concentric circles for the speedometer look
-  int radius = 60;
-  uint16_t colors[] = {ST77XX_WHITE, ST77XX_CYAN, ST77XX_MAGENTA};
-  for (int i = 0; i < 3; i++) {
-     tft.drawCircle(tft.width() / 2, tft.height() / 2, radius + i * 15, colors[i]);
-  }
+    // display Distance (xxx.xxx km)
+    tft.setCursor(10, 150);
+    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+    tft.setTextSize(4);
+    if(km<100){
+      tft.print("0");
+    }
+    if(km<10){
+      tft.print("0");
+    }
+    tft.print(km, 3);
+      
+    // display Nearest Object Distance (xx.x m)
+    tft.setTextColor(ST77XX_RED, ST77XX_BLACK);
+    tft.setCursor(10, 200);
+    if(nearest_obj_dist_m < 10) {
+      tft.print("0");
+    }
+    tft.print(nearest_obj_dist_m, 1);
 
-  // Draw "speed lines" around the circle to give a sense of motion
-  for (int16_t angle = 0; angle < 360; angle += 30) {
-    float radians = angle * (3.14159 / 180);
-    int xStart = (tft.width() / 2) + cos(radians) * (radius + 20);
-    int yStart = (tft.height() / 2) + sin(radians) * (radius + 20);
-    int xEnd = (tft.width() / 2) + cos(radians) * (radius + 30);
-    int yEnd = (tft.height() / 2) + sin(radians) * (radius + 30);
-    tft.drawLine(xStart, yStart, xEnd, yEnd, ST77XX_YELLOW);
-  }
+    // display Time (HH:MM:SS)
+    tft.setCursor(dial_center_x - 70, dial_center_y + DIAL_RAD + 160);
+    tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
+    tft.setTextSize(3);
+    if (hours < 10) tft.print("0");
+    tft.print(hours);
+    tft.print(":");
+    if (minutes < 10) tft.print("0");
+    tft.print(minutes);
+    tft.print(":");
+    if (seconds < 10) tft.print("0");
+    tft.print(seconds);
+}
 
-  // Display speed in the center
-  tft.setCursor(tft.width() / 2 - 30, tft.height() / 2 - 20);
-  tft.setTextColor(ST77XX_GREEN);
+float distance_single()
+{
+    // 1. Wait for busyFlag to indicate device is idle. This must be
+    //    done before triggering a range measurement.
+    myLidarLite.waitForBusy();
+
+    // 2. Trigger range measurement.
+    myLidarLite.takeRange();
+
+    // 3. Wait for busyFlag to indicate device is idle. This should be
+    //    done before reading the distance data that was triggered above.
+    myLidarLite.waitForBusy();
+
+    // 4. Read new distance data from device registers
+    return myLidarLite.readDistance()/100.0;
+}
+
+// Reset screen to standard display of information
+void reset_screen(){
+  // blackout the screen
+  tft.fillScreen(ST77XX_BLACK);
+
+  // write "MPH"
+  tft.setTextColor(ST77XX_WHITE);
   tft.setTextSize(3);
-  tft.print((int)speed_mph); // Cast speed to int for simplicity
-  tft.print(" MPH");
+  tft.setCursor(tft.width()-55, 80);
+  tft.print("MPH");
 
-  // Draw a needle pointing to speed (map speed to a needle angle)
-  double max_speed = 30; // Example max speed
-  double angle = (speed_mph / max_speed) * 270 - 135; // Maps speed to angle from -135 to +135 degrees
-  double rad = angle * (3.14159 / 180);
-  int xEnd = (tft.width() / 2) + cos(rad) * (radius + 15);
-  int yEnd = (tft.height() / 2) + sin(rad) * (radius + 15);
-  tft.drawLine(tft.width() / 2, tft.height() / 2, xEnd, yEnd, ST77XX_RED);
+  // write "km"
+  tft.setTextColor(ST77XX_CYAN);
+  tft.setCursor(tft.width()-55, 150);
+  tft.print("km");
+
+  // write "m"
+  tft.setTextColor(ST77XX_RED);
+  tft.setCursor(tft.width()-55, 200);
+  tft.print("m");
 }
