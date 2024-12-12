@@ -2,7 +2,7 @@
 
  @authors: George Fang, Luke Andresen
 
- @date: 10/30/2024
+ @date: 12/10/2024
 
  @brief: Libraries needed for the main code
 
@@ -21,3 +21,6 @@
 
 // SERVO:
 #include <Servo.h> 
+
+// IMU:
+#include <Adafruit_ICM20948.h>
